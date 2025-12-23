@@ -1,0 +1,11 @@
+Unnamed: 0
+StationId
+StationName
+CityName
+LowOrPeakDescFull
+year_key
+month_key
+day_in_week
+Lat
+Long
+total_rides
