@@ -2,12 +2,53 @@ import streamlit as st
 import pandas as pd
 import pydeck as pdk
 import numpy as np
+import time
 
 st.set_page_config(layout="wide")
 
-DATA_PATH = "../Create Dataset/data/clean/data.parquet"
+# Align everything on the hteml final page to right because we think its more elegant in hebrew as the data is relevant to Israel only
+st.markdown(
+    """
+    <style>
+    html, body, [class*="st-"] {
+        direction: rtl;
+        text-align: right;
+    }
 
-DAY_MAP = {
+    h1, h2, h3, h4, h5, h6 {
+        direction: rtl;
+        text-align: right;
+    }
+
+    .stMarkdown {
+        direction: rtl;
+        text-align: right;
+    }
+
+    .deck-tooltip {
+        direction: rtl;
+        text-align: right;
+    }
+    
+    .stMarkdown ul {
+        padding-right: 1.2em;
+        padding-left: 0;
+        list-style-position: inside;
+    }
+
+    .stMarkdown li {
+        text-align: right;
+    }
+    
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
+
+data_path = "../Create Dataset/data/clean/data.parquet"
+
+day_names_map = {
     1: "ראשון",
     2: "שני",
     3: "שלישי",
@@ -17,9 +58,7 @@ DAY_MAP = {
     7: "שבת",
 }
 
-# =========================================================
-# Load + prepare (cached)
-# =========================================================
+
 @st.cache_data(show_spinner=True)
 def load_and_prepare(path: str):
     df = pd.read_parquet(path)
@@ -34,6 +73,7 @@ def load_and_prepare(path: str):
             "LowOrPeakDescFull",
             "day_in_week",
             "year_key",
+            "month_key",     
             "total_rides",
         ]
     ].copy()
@@ -44,91 +84,118 @@ def load_and_prepare(path: str):
         .reset_index(drop=True)
     )
 
-    fact = (
+    travels = (
         df.groupby(
-            ["StationId", "year_key", "LowOrPeakDescFull", "day_in_week"],
+            ["StationId", "year_key", "month_key", "LowOrPeakDescFull", "day_in_week"],
             as_index=False,
         )
         .agg(total_rides=("total_rides", "sum"))
     )
 
+    travels["LowOrPeakDescFull"] = travels["LowOrPeakDescFull"].astype("category")
+    travels["day_in_week"] = travels["day_in_week"].astype("int8")
+    travels["StationId"] = travels["StationId"].astype("int32")
+    travels["year_key"] = travels["year_key"].astype("int16")
+    travels["month_key"] = travels["month_key"].astype("int8")
+
     return (
-        fact,
+        travels,
         stations,
-        int(fact.year_key.min()),
-        int(fact.year_key.max()),
-        sorted(fact.LowOrPeakDescFull.unique()),
-        sorted(fact.day_in_week.unique()),
+        int(travels.year_key.min()),
+        int(travels.year_key.max()),
+        int(travels.month_key.min()),
+        int(travels.month_key.max()),
+        sorted(travels.LowOrPeakDescFull.unique()),
+        sorted(travels.day_in_week.unique()),
         sorted(stations.CityName.dropna().unique()),
     )
 
+#region Initalize
+(travels, stations,
+ year_min, year_max,
+ month_min, month_max,
+ time_values, day_values,
+ city_values,
+ ) = load_and_prepare(data_path)
 
-fact, stations, year_min, year_max, time_values, day_values, city_values = load_and_prepare(
-    DATA_PATH
+travels = travels.merge(
+    stations[["StationId", "StationName", "CityName", "Lat", "Long"]],
+    on="StationId",
+    how="left"
 )
+travels = travels.dropna(subset=["Lat", "Long"])
+#endregion
 
-# =========================================================
 # Page selector
-# =========================================================
-page = st.sidebar.radio("Page", ["🗺️ Map", "📊 Other (placeholder)"])
+page = st.sidebar.radio("תפריט", [
+    "🏠 מסך הבית",
+    "מפה גיאוגרפית",
+    "שימוש לפי שעות וחודשים",
+    "מגמות לאורך זמן",
+    "ערים מובילות"
+])
+st.sidebar.divider()
 
-# =========================================================
-# ======================= PAGE 1 ==========================
-# =========================================================
-if page == "🗺️ Map":
+# Home page
+if page == '🏠 מסך הבית':
+    st.title("שימוש בתחבורה ציבורית לפי תחנה")
 
-    # -----------------------------
-    # Sidebar – Filters
-    # -----------------------------
-    st.sidebar.header("Filters")
+    st.info("הסברים")
 
-    years = st.sidebar.slider("Years", year_min, year_max, (year_min, year_max))
+# Map Page
+elif page == "מפה גיאוגרפית":
+
+    #region Map Filters GUI
+    st.sidebar.header("סינון")
+
+    # Years and months sliders
+    years = st.sidebar.slider("שנים", year_min, year_max, (year_min, year_max))
+    months = st.sidebar.slider("חודשים", month_min, month_max, (month_min, month_max))
 
     st.sidebar.divider()
 
-    # ---- Time of day
-    st.sidebar.subheader("Time of day")
+    # Time in day checkboxes
+    st.sidebar.subheader("זמן ביום")
     selected_hours = [
         v for v in time_values if st.sidebar.checkbox(v, value=True, key=f"tod_{v}")
     ]
 
     st.sidebar.divider()
 
-    # ---- Days of week (with select/clear all)
-    st.sidebar.subheader("Day of week")
+    # Day of week multiselect
+    st.sidebar.subheader("יום בשבוע")
 
-    if "days" not in st.session_state:
-        st.session_state["days"] = day_values[:]
+    day_labels = [day_names_map[d] for d in day_values]
+    inverse_day_names_map = {day_names_map[d]: d for d in day_values}
+
+    if "day_labels_internal" not in st.session_state:
+        st.session_state["day_labels_internal"] = day_labels[:]
 
     d1, d2 = st.sidebar.columns(2)
-    if d1.button("Select all days", use_container_width=True):
-        st.session_state["days"] = day_values[:]
-    if d2.button("Clear all days", use_container_width=True):
-        st.session_state["days"] = []
+    if d1.button("בחר כל הימים", use_container_width=True):
+        st.session_state["day_labels_internal"] = day_labels[:]
+    if d2.button("הסר כל הימים", use_container_width=True):
+        st.session_state["day_labels_internal"] = []
 
-    day_labels = [DAY_MAP[d] for d in day_values]
     selected_day_labels = st.sidebar.multiselect(
         " ",
         options=day_labels,
-        default=[DAY_MAP[d] for d in st.session_state["days"]],
         key="day_labels_internal",
     )
 
-    selected_days = [d for d, lbl in DAY_MAP.items() if lbl in selected_day_labels]
-    st.session_state["days"] = selected_days
-
+    selected_days = [inverse_day_names_map[lbl] for lbl in selected_day_labels]
     st.sidebar.divider()
 
-    # ---- Cities (with select/clear all)
-    st.sidebar.subheader("Cities")
+    # ities multiselect
+    st.sidebar.subheader("ערים")
 
     if "cities" not in st.session_state:
         st.session_state["cities"] = city_values[:]
 
     c1, c2 = st.sidebar.columns(2)
-    if c1.button("Select all cities", use_container_width=True):
+    if c1.button("בחר כל הערים", use_container_width=True):
         st.session_state["cities"] = city_values[:]
-    if c2.button("Clear all cities", use_container_width=True):
+    if c2.button("הסר כל הערים", use_container_width=True):
         st.session_state["cities"] = []
 
     selected_cities = st.sidebar.multiselect(
@@ -140,96 +207,127 @@ if page == "🗺️ Map":
     st.sidebar.divider()
 
     # Visual controls
-    radius = st.sidebar.slider("Column radius (meters)", 30, 150, 60, 10)
-    elev_scale = st.sidebar.slider("Elevation scale", 0.0001, 0.01, 0.001, step=0.0001)
+    radius = st.sidebar.slider("רדיוס תחנה (מ')", 30, 150, 100)
+    elev_scale = st.sidebar.slider("פרופורצית מתיחה (גובה)", 0.0001, 0.01, 0.001, step=0.0001)
+    #endregion
 
-    # -----------------------------
-    # Filter + aggregate
-    # -----------------------------
-    filtered_fact = fact[
-        (fact.year_key.between(*years))
-        & (fact.LowOrPeakDescFull.isin(selected_hours))
-        & (fact.day_in_week.isin(selected_days))
+    #region Handle change in GUI elements
+    # s = time.time()
+    filtered_travels = travels[
+        (travels.year_key.between(*years))
+        & (travels.month_key.between(*months))
+        & (travels.LowOrPeakDescFull.isin(selected_hours))
+        & (travels.day_in_week.isin(selected_days))
     ]
+    # print(f"Filter + aggregate: {round(time.time()-s,1)} [s]")
 
-    agg_station = (
-        filtered_fact.groupby("StationId", as_index=False)
+    # s = time.time()
+    map_df = (
+        filtered_travels
+        .groupby(
+            ["StationId", "StationName", "CityName", "Lat", "Long"],
+            as_index=False
+        )
         .agg(total_rides=("total_rides", "sum"))
     )
-
-    map_df = agg_station.merge(stations, on="StationId")
+    # print(f"groupby: {round(time.time()-s,1)} [s]")
 
     if selected_cities:
         map_df = map_df[map_df.CityName.isin(selected_cities)]
     else:
         map_df = map_df.iloc[0:0]
 
-    map_df = map_df.dropna(subset=["Lat", "Long"])
 
     if map_df.empty:
         st.warning("אין נתונים להצגה עבור הפילטרים שנבחרו.")
         st.stop()
+    #endregion
 
-    # -----------------------------
-    # Top-N stations (slider + textbox)
-    # -----------------------------
-    max_stations = len(map_df)
+    #region Top-N stations
+    amount_stations = len(map_df)
 
     if "top_n" not in st.session_state:
-        st.session_state["top_n"] = min(1000, max_stations)
+        st.session_state["top_n"] = amount_stations
 
+    st.session_state["top_n"] = int(np.clip(st.session_state["top_n"], 1, amount_stations))
+
+    # Slider
     top_n_slider = st.sidebar.slider(
-        "Top stations (slider)",
+        "מספר תחנות להצגה",
         min_value=1,
-        max_value=max_stations,
+        max_value=amount_stations,
         value=st.session_state["top_n"],
-        step=50 if max_stations > 50 else 1,
+        step=50 if amount_stations > 50 else 1,
     )
 
+    # Textbox
     top_n_input = st.sidebar.number_input(
-        "Top stations (exact number)",
+        "הקלד מספר תחנות",
         min_value=1,
-        max_value=max_stations,
-        value=top_n_slider,
+        max_value=amount_stations,
+        value=int(top_n_slider),
         step=1,
     )
 
-    top_n = min(top_n_input, max_stations)
-    st.session_state["top_n"] = top_n
+    top_n = min(int(top_n_input), amount_stations)
+    st.session_state["top_n"] = int(top_n_slider)
 
     map_df = (
         map_df.sort_values("total_rides", ascending=False)
         .head(top_n)
         .copy()
     )
+    #endregion
 
-    # -----------------------------
-    # Color scale (blue → green)
-    # -----------------------------
+    #region Color scale
     rides = map_df["total_rides"].values
-    norm = (rides - rides.min()) / (rides.max() - rides.min() + 1e-9)
+    log_rides = np.log1p(rides)
+    norm = (log_rides - log_rides.min()) / (log_rides.max() - log_rides.min() + 1e-9)
 
     map_df["color"] = [
-        [int(40 + 40*n), int(120 + 120*n), int(180 - 60*n), 170]
+        [int(255 * n), int(255 * (1 - abs(n - 0.5) * 2)), int(255 * (1 - n)), 180]
         for n in norm
     ]
-
     map_df["rides_fmt"] = map_df["total_rides"].apply(lambda x: f"{int(x):,}")
+    #endregion
 
-    # -----------------------------
-    # Metrics row
-    # -----------------------------
-    st.title("שימוש בתחבורה ציבורית לפי תחנה")
 
-    m1, m2, m3, m4 = st.columns(4)
-    m1.metric("Stations shown", f"{len(map_df):,}")
-    m2.metric("Cities selected", f"{len(selected_cities):,}")
-    m3.metric("Years", f"{years[0]}–{years[1]}")
-    m4.metric("Days selected", f"{len(selected_days):,}")
 
-    # -----------------------------
-    # ColumnLayer map
-    # -----------------------------
+
+    #region Statistics above the map
+    st.markdown(
+        """
+        # איפה נמצאות התחנות העמוסות ביותר?
+
+        המפה מציגה תחנות תחבורה ציבורית בישראל, כאשר כל תחנה מיוצגת על־ידי עמוד תלת־ממדי.
+        **גובה העמוד** - מייצג את סך הנסיעות בתחנה בפרק זמן.
+        **צבע העמוד** - מייצג את סך הנסיעות באופן יחסי.
+
+        ### מדריך שימוש
+        
+        - השתמש בלחצן השמאלי של העכבר לתנועה בתוך המפה (גרירה). בנוסף ניתן ללחוץ על העכבר בזמן שלוחצים Ctrl לשינוי זווית המבט, בשביל לשנות זום ניתן להשתמש בגלגלת.
+        - אפשר להעביר את העכבר מעל תחנה כדי לצפות בפרטים שלה כולל סך הנסיעות בפרק הזמן הנבחר.
+        - השתמש בסרגל הצד כדי לסנן את התחנות לפי קריטריונים שונים (שנים, חודשים, ימים, שעות וערים).
+        - בתחתית הסרגל ניתן להגביל את כמות התחנות המוצגות (בהתאם לסינון שנבחר) ע"י שימוש בסליידר או בתיבת הטקסט.
+        - ניתן לשנות את גובה העמודים והרדיוס שלהם מהסרגל.
+    """
+    )
+    stations_stat, cities_stat, years_stat, months_stat, days_stat = st.columns(5)
+
+    stations_stat.metric("תחנות מוצגות", f"{len(map_df):,}")
+    cities_stat.metric("ערים נבחרו", f"{len(selected_cities):,}")
+    if years[0] != years[1]:
+        years_stat.metric("שנים", f"{years[0]}–{years[1]}")
+    else:
+        years_stat.metric("שנים", f"{years[0]}")
+    if months[0] != months[1]:
+        months_stat.metric("חודשים", f"{months[0]}–{months[1]}")
+    else:
+        months_stat.metric("חודשים", f"{months[0]}")
+    days_stat.metric("ימים נבחרו", f"{len(selected_days):,}")
+    #endregion
+
+    #region ColumnLayer map
     layer = pdk.Layer(
         "ColumnLayer",
         data=map_df,
@@ -245,8 +343,8 @@ if page == "🗺️ Map":
     view_state = pdk.ViewState(
         latitude=float(map_df.Lat.mean()),
         longitude=float(map_df.Long.mean()),
-        zoom=10,
-        pitch=60,
+        zoom=9,
+        pitch=90,
     )
 
     deck = pdk.Deck(
@@ -255,18 +353,28 @@ if page == "🗺️ Map":
         tooltip={
             "html": (
                 "<b>{StationName}</b><br/>"
-                "Station ID: {StationId}<br/>"
-                "City: {CityName}<br/>"
-                "Total rides: {rides_fmt}"
+                "מספר תחנה: {StationId}<br/>"
+                "עיר: {CityName}<br/>"
+                "סך הנסיעות: {rides_fmt}"
             )
         },
     )
 
     st.pydeck_chart(deck, use_container_width=True, height=780)
+    #endregion
 
-# =========================================================
-# ======================= PAGE 2 ==========================
-# =========================================================
-else:
-    st.title("📊 Coming soon")
+# Page 2
+elif page == 'שימוש לפי שעות וחודשים':
+    st.title("עמוד 2")
     st.info("כאן ייכנס גרף נוסף (טרנדים, התפלגות, השוואות וכו׳).")
+
+# Page 3
+elif page == 'מגמות לאורך זמן':
+    st.title("עמוד 4")
+    st.info("כאן ייכנס גרף נוסף (טרנדים, התפלגות, השוואות וכו׳).")
+
+# Page 4
+elif page == 'ערים מובילות':
+    st.title("עמוד 5")
+    st.info("כאן ייכנס גרף נוסף (טרנדים, התפלגות, השוואות וכו׳).")
+
