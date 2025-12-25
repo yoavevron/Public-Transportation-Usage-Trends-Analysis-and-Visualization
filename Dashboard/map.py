@@ -40,6 +40,18 @@ st.markdown(
         text-align: right;
     }
     
+    /* sliders*/
+    input[type="range"] {
+        direction: ltr;
+    }
+    div[data-baseweb="slider"] {
+        direction: ltr;
+    }
+    div[data-baseweb="slider"] * {
+        direction: ltr;
+        text-align: left;
+    }
+
     </style>
     """,
     unsafe_allow_html=True
@@ -129,10 +141,10 @@ travels = travels.dropna(subset=["Lat", "Long"])
 # Page selector
 page = st.sidebar.radio("תפריט", [
     "🏠 מסך הבית",
-    "מפה גיאוגרפית",
-    "שימוש לפי שעות וחודשים",
-    "מגמות לאורך זמן",
-    "ערים מובילות"
+    "🗺️ מפה",
+    "📆 תקופות ושעות עמוסות",
+    "📈 מגמות",
+    "📍 דירוג ערים"
 ])
 st.sidebar.divider()
 
@@ -143,7 +155,7 @@ if page == '🏠 מסך הבית':
     st.info("הסברים")
 
 # Map Page
-elif page == "מפה גיאוגרפית":
+elif page == "🗺️ מפה":
 
     #region Map Filters GUI
     st.sidebar.header("סינון")
@@ -207,9 +219,13 @@ elif page == "מפה גיאוגרפית":
     st.sidebar.divider()
 
     # Visual controls
-    radius = st.sidebar.slider("רדיוס תחנה (מ')", 30, 150, 100)
-    elev_scale = st.sidebar.slider("פרופורצית מתיחה (גובה)", 0.0001, 0.01, 0.001, step=0.0001)
-    #endregion
+    radius_scale = st.sidebar.slider(
+        "רדיוס תחנה",
+        min_value=0.2,
+        max_value=2.0,
+        value=1.0,
+        step=0.1
+    )    #endregion
 
     #region Handle change in GUI elements
     # s = time.time()
@@ -273,26 +289,38 @@ elif page == "מפה גיאוגרפית":
     st.session_state["top_n"] = int(top_n_slider)
 
     map_df = (
-        map_df.sort_values("total_rides", ascending=False)
+        map_df.sort_values("total_rides", ascending=True)
         .head(top_n)
         .copy()
     )
     #endregion
 
-    #region Color scale
+    #region Color and scale
     rides = map_df["total_rides"].values
     log_rides = np.log1p(rides)
     norm = (log_rides - log_rides.min()) / (log_rides.max() - log_rides.min() + 1e-9)
 
+    color_thresh = 0.7
+
     map_df["color"] = [
-        [int(255 * n), int(255 * (1 - abs(n - 0.5) * 2)), int(255 * (1 - n)), 180]
+        [
+            int(255 * (n / color_thresh)) if n <= color_thresh else 255,  # red
+            255 if n <= color_thresh else int(255 * (1 - (n - color_thresh) / (1 - color_thresh))),  # green
+            0,  # blue
+            180  # alpha
+        ]
         for n in norm
     ]
+
     map_df["rides_fmt"] = map_df["total_rides"].apply(lambda x: f"{int(x):,}")
+
+    min_r = 30
+    max_r = 180
+    base_radius = min_r + norm * (max_r - min_r)
+
+    map_df["radius"] = base_radius * radius_scale
+
     #endregion
-
-
-
 
     #region Statistics above the map
     st.markdown(
@@ -305,11 +333,11 @@ elif page == "מפה גיאוגרפית":
 
         ### מדריך שימוש
         
-        - השתמש בלחצן השמאלי של העכבר לתנועה בתוך המפה (גרירה). בנוסף ניתן ללחוץ על העכבר בזמן שלוחצים Ctrl לשינוי זווית המבט, בשביל לשנות זום ניתן להשתמש בגלגלת.
+        - השתמש בלחצן השמאלי של העכבר לתנועה בתוך המפה (גרירה). בשביל לשנות זום ניתן להשתמש בגלגלת.
         - אפשר להעביר את העכבר מעל תחנה כדי לצפות בפרטים שלה כולל סך הנסיעות בפרק הזמן הנבחר.
         - השתמש בסרגל הצד כדי לסנן את התחנות לפי קריטריונים שונים (שנים, חודשים, ימים, שעות וערים).
         - בתחתית הסרגל ניתן להגביל את כמות התחנות המוצגות (בהתאם לסינון שנבחר) ע"י שימוש בסליידר או בתיבת הטקסט.
-        - ניתן לשנות את גובה העמודים והרדיוס שלהם מהסרגל.
+        - ניתן לשנות את רדיוס העיגולים מהסרגל.
     """
     )
     stations_stat, cities_stat, years_stat, months_stat, days_stat = st.columns(5)
@@ -317,11 +345,11 @@ elif page == "מפה גיאוגרפית":
     stations_stat.metric("תחנות מוצגות", f"{len(map_df):,}")
     cities_stat.metric("ערים נבחרו", f"{len(selected_cities):,}")
     if years[0] != years[1]:
-        years_stat.metric("שנים", f"{years[0]}–{years[1]}")
+        years_stat.metric("שנים", f"{years[1]}–{years[0]}")
     else:
         years_stat.metric("שנים", f"{years[0]}")
     if months[0] != months[1]:
-        months_stat.metric("חודשים", f"{months[0]}–{months[1]}")
+        months_stat.metric("חודשים", f"{months[1]}–{months[0]}")
     else:
         months_stat.metric("חודשים", f"{months[0]}")
     days_stat.metric("ימים נבחרו", f"{len(selected_days):,}")
@@ -329,12 +357,10 @@ elif page == "מפה גיאוגרפית":
 
     #region ColumnLayer map
     layer = pdk.Layer(
-        "ColumnLayer",
+        "ScatterplotLayer",
         data=map_df,
         get_position=["Long", "Lat"],
-        get_elevation="total_rides",
-        elevation_scale=elev_scale,
-        radius=radius,
+        get_radius="radius",
         get_fill_color="color",
         pickable=True,
         auto_highlight=True,
@@ -344,7 +370,6 @@ elif page == "מפה גיאוגרפית":
         latitude=float(map_df.Lat.mean()),
         longitude=float(map_df.Long.mean()),
         zoom=9,
-        pitch=90,
     )
 
     deck = pdk.Deck(
@@ -364,17 +389,17 @@ elif page == "מפה גיאוגרפית":
     #endregion
 
 # Page 2
-elif page == 'שימוש לפי שעות וחודשים':
+elif page == '📆 תקופות ושעות עמוסות':
     st.title("עמוד 2")
     st.info("כאן ייכנס גרף נוסף (טרנדים, התפלגות, השוואות וכו׳).")
 
 # Page 3
-elif page == 'מגמות לאורך זמן':
+elif page == '📈 מגמות':
     st.title("עמוד 4")
     st.info("כאן ייכנס גרף נוסף (טרנדים, התפלגות, השוואות וכו׳).")
 
 # Page 4
-elif page == 'ערים מובילות':
+elif page == '📍 דירוג ערים':
     st.title("עמוד 5")
     st.info("כאן ייכנס גרף נוסף (טרנדים, התפלגות, השוואות וכו׳).")
 
