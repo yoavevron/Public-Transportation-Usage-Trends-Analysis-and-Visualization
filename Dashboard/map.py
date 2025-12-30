@@ -4,6 +4,10 @@ import pydeck as pdk
 import numpy as np
 import time
 
+
+data_path = "data.parquet"
+
+# region Configuration
 st.set_page_config(layout="wide")
 
 # Align everything on the hteml final page to right because we think its more elegant in hebrew as the data is relevant to Israel only
@@ -58,8 +62,7 @@ st.markdown(
 )
 
 
-data_path = "../Create Dataset/data/clean/data.parquet"
-
+# A dictionary that maps each day number to its hebrew name for example "1:ראשון"
 day_names_map = {
     1: "ראשון",
     2: "שני",
@@ -71,8 +74,19 @@ day_names_map = {
 }
 
 
+#region Initalize
+@st.cache_data
+def aggregate_map(df):
+    return (
+        df.groupby(
+            ["StationId", "StationName", "CityName", "Lat", "Long"],
+            as_index=False
+        )
+        .agg(total_rides=("total_rides", "sum"))
+    )
+
 @st.cache_data(show_spinner=True)
-def load_and_prepare(path: str):
+def load_prepare_enriched(path: str):
     df = pd.read_parquet(path)
 
     df = df[
@@ -85,7 +99,7 @@ def load_and_prepare(path: str):
             "LowOrPeakDescFull",
             "day_in_week",
             "year_key",
-            "month_key",     
+            "month_key",
             "total_rides",
         ]
     ].copy()
@@ -104,38 +118,38 @@ def load_and_prepare(path: str):
         .agg(total_rides=("total_rides", "sum"))
     )
 
+    # data types
     travels["LowOrPeakDescFull"] = travels["LowOrPeakDescFull"].astype("category")
     travels["day_in_week"] = travels["day_in_week"].astype("int8")
     travels["StationId"] = travels["StationId"].astype("int32")
     travels["year_key"] = travels["year_key"].astype("int16")
     travels["month_key"] = travels["month_key"].astype("int8")
 
+    # merge + drop na
+    travels = travels.merge(
+        stations[["StationId", "StationName", "CityName", "Lat", "Long"]],
+        on="StationId",
+        how="left",
+    ).dropna(subset=["Lat", "Long"])
+
     return (
         travels,
-        stations,
         int(travels.year_key.min()),
         int(travels.year_key.max()),
         int(travels.month_key.min()),
         int(travels.month_key.max()),
         sorted(travels.LowOrPeakDescFull.unique()),
         sorted(travels.day_in_week.unique()),
-        sorted(stations.CityName.dropna().unique()),
+        sorted(travels.CityName.dropna().unique()),
     )
 
-#region Initalize
-(travels, stations,
+(travels,
  year_min, year_max,
  month_min, month_max,
  time_values, day_values,
- city_values,
- ) = load_and_prepare(data_path)
+ city_values) = load_prepare_enriched(data_path)
 
-travels = travels.merge(
-    stations[["StationId", "StationName", "CityName", "Lat", "Long"]],
-    on="StationId",
-    how="left"
-)
-travels = travels.dropna(subset=["Lat", "Long"])
+#endregion
 #endregion
 
 # Page selector
@@ -156,6 +170,29 @@ if page == '🏠 מסך הבית':
 
 # Map Page
 elif page == "🗺️ מפה":
+
+    #Infomation and guidance paragraph
+    st.markdown(
+        """
+        # איפה נמצאות התחנות העמוסות ביותר?
+
+        המפה מציגה תחנות תחבורה ציבורית בישראל, כאשר כל תחנה מיוצגת על־ידי עיגול.
+        **צבע העיגול** - מייצג את סך הנסיעות באופן יחסי.
+
+        ### מדריך שימוש
+        
+        - השתמש בלחצן השמאלי של העכבר לתנועה בתוך המפה ("גרור" את המפה). בשביל לשנות זום ניתן להשתמש בגלגלת.
+        - אפשר להעביר את העכבר מעל תחנה כדי לצפות בפרטים שלה כגון סך הנסיעות (בפרק הזמן הנבחר לפי הפילטרים).
+        - השתמש בסרגל הצד כדי לסנן את התחנות לפי קריטריונים שונים (שנים, חודשים, ימים, שעות וערים).
+        - בתחתית הסרגל ניתן להגביל את כמות התחנות המוצגות (בהתאם לסינון שנבחר) ע"י שימוש בסליידר או בתיבת הטקסט.
+        - ניתן לשנות את רדיוס העיגולים מהסרגל.
+
+        דוגמא להבנת הנתונים:
+         
+        - אם נסנן את השנים 2024-2025, יום ראשון בלבד, בשיא הבוקר ונראה שבתחנה מסוימת היו 100,000 נסיעות, סימן שסך הנסיעות שבוצעו בתחנה זו בשנים 2024-2025 בכל חודשי השנה, בכל ימי ראשון - רק בשיא הבוקר זה 100,000
+        - אם נסנן ערים ונשאיר רק ירושלים ותל אביב, ונבחר להציג רק את 50 התחנות העמוסות ביותר, זה יציג לנו מתוך כל התחנות שהיו בירושלים ותל אביב את 50 התחנות העמוסות ביותר
+    """
+    )
 
     #region Map Filters GUI
     st.sidebar.header("סינון")
@@ -184,9 +221,9 @@ elif page == "🗺️ מפה":
         st.session_state["day_labels_internal"] = day_labels[:]
 
     d1, d2 = st.sidebar.columns(2)
-    if d1.button("בחר כל הימים", use_container_width=True):
+    if d1.button("בחר כל הימים", width='stretch'):
         st.session_state["day_labels_internal"] = day_labels[:]
-    if d2.button("הסר כל הימים", use_container_width=True):
+    if d2.button("הסר כל הימים", width='stretch'):
         st.session_state["day_labels_internal"] = []
 
     selected_day_labels = st.sidebar.multiselect(
@@ -205,9 +242,9 @@ elif page == "🗺️ מפה":
         st.session_state["cities"] = city_values[:]
 
     c1, c2 = st.sidebar.columns(2)
-    if c1.button("בחר כל הערים", use_container_width=True):
+    if c1.button("בחר כל הערים", width='stretch'):
         st.session_state["cities"] = city_values[:]
-    if c2.button("הסר כל הערים", use_container_width=True):
+    if c2.button("הסר כל הערים", width='stretch'):
         st.session_state["cities"] = []
 
     selected_cities = st.sidebar.multiselect(
@@ -225,28 +262,19 @@ elif page == "🗺️ מפה":
         max_value=2.0,
         value=1.0,
         step=0.1
-    )    #endregion
+    )    
+    #endregion
 
     #region Handle change in GUI elements
-    # s = time.time()
     filtered_travels = travels[
         (travels.year_key.between(*years))
         & (travels.month_key.between(*months))
         & (travels.LowOrPeakDescFull.isin(selected_hours))
         & (travels.day_in_week.isin(selected_days))
     ]
-    # print(f"Filter + aggregate: {round(time.time()-s,1)} [s]")
 
-    # s = time.time()
-    map_df = (
-        filtered_travels
-        .groupby(
-            ["StationId", "StationName", "CityName", "Lat", "Long"],
-            as_index=False
-        )
-        .agg(total_rides=("total_rides", "sum"))
-    )
-    # print(f"groupby: {round(time.time()-s,1)} [s]")
+    map_df = aggregate_map(filtered_travels)
+
 
     if selected_cities:
         map_df = map_df[map_df.CityName.isin(selected_cities)]
@@ -289,10 +317,12 @@ elif page == "🗺️ מפה":
     st.session_state["top_n"] = int(top_n_slider)
 
     map_df = (
-        map_df.sort_values("total_rides", ascending=True)
-        .head(top_n)
+        map_df
+        .nlargest(top_n, "total_rides")
+        .sort_values("total_rides", ascending=True)
         .copy()
     )
+
     #endregion
 
     #region Color and scale
@@ -314,32 +344,16 @@ elif page == "🗺️ מפה":
 
     map_df["rides_fmt"] = map_df["total_rides"].apply(lambda x: f"{int(x):,}")
 
-    min_r = 30
-    max_r = 180
-    base_radius = min_r + norm * (max_r - min_r)
+    # min_r = 30
+    # max_r = 180
+    # base_radius = min_r + norm * (max_r - min_r)
 
-    map_df["radius"] = base_radius * radius_scale
+    map_df["radius"] = 80 * radius_scale
 
     #endregion
 
     #region Statistics above the map
-    st.markdown(
-        """
-        # איפה נמצאות התחנות העמוסות ביותר?
-
-        המפה מציגה תחנות תחבורה ציבורית בישראל, כאשר כל תחנה מיוצגת על־ידי עמוד תלת־ממדי.
-        **גובה העמוד** - מייצג את סך הנסיעות בתחנה בפרק זמן.
-        **צבע העמוד** - מייצג את סך הנסיעות באופן יחסי.
-
-        ### מדריך שימוש
-        
-        - השתמש בלחצן השמאלי של העכבר לתנועה בתוך המפה (גרירה). בשביל לשנות זום ניתן להשתמש בגלגלת.
-        - אפשר להעביר את העכבר מעל תחנה כדי לצפות בפרטים שלה כולל סך הנסיעות בפרק הזמן הנבחר.
-        - השתמש בסרגל הצד כדי לסנן את התחנות לפי קריטריונים שונים (שנים, חודשים, ימים, שעות וערים).
-        - בתחתית הסרגל ניתן להגביל את כמות התחנות המוצגות (בהתאם לסינון שנבחר) ע"י שימוש בסליידר או בתיבת הטקסט.
-        - ניתן לשנות את רדיוס העיגולים מהסרגל.
-    """
-    )
+    
     stations_stat, cities_stat, years_stat, months_stat, days_stat = st.columns(5)
 
     stations_stat.metric("תחנות מוצגות", f"{len(map_df):,}")
@@ -385,7 +399,7 @@ elif page == "🗺️ מפה":
         },
     )
 
-    st.pydeck_chart(deck, use_container_width=True, height=780)
+    st.pydeck_chart(deck, width='stretch', height=780)
     #endregion
 
 # Page 2
