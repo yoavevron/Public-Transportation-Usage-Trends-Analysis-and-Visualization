@@ -2,6 +2,9 @@ import streamlit as st
 import pandas as pd
 import pydeck as pdk
 import numpy as np
+import plotly.express as px
+import plotly.graph_objects as go
+import re
 import time
 
 
@@ -417,11 +420,199 @@ elif page == "🗺️ מפה":
     st.pydeck_chart(deck, width='stretch', height=780)
     #endregion
 
-# Page 2
 elif page == '📆 תקופות ושעות עמוסות':
-    st.title("עמוד 2")
-    st.info("כאן ייכנס גרף נוסף (טרנדים, התפלגות, השוואות וכו׳).")
 
+    st.title("ניתוח עומסים: ממוצעי תיקופים ארצי בתחבורה ציבורית")
+
+    # Constants
+    YEARS_IN_DATA = 5
+    ESTIMATED_NON_SAT_DAYS = 1566
+
+    # --- Region: Data Preparation ---
+
+    # 1. Monthly Data
+    all_months = pd.DataFrame({"month_key": range(1, 13)})
+    real_counts = (
+        travels.groupby("month_key", as_index=False)
+        .agg(sum_rides=("total_rides", "sum"))
+    )
+    # Simple average per year
+    real_counts["avg_val"] = real_counts["sum_rides"] / YEARS_IN_DATA
+    month_counts = pd.merge(all_months, real_counts, on="month_key", how="left").fillna(0)
+
+    month_map = {
+        1: 'JAN', 2: 'FEB', 3: 'MAR', 4: 'APR', 5: 'MAY', 6: 'JUN',
+        7: 'JUL', 8: 'AUG', 9: 'SEP', 10: 'OCT', 11: 'NOV', 12: 'DEC'
+    }
+    month_counts["month_name"] = month_counts["month_key"].map(month_map)
+    # Theta/Width not strictly needed for Bar, but keeping for data consistency if needed
+    month_counts["theta_val"] = month_counts["month_key"] * 30
+    month_counts["width_val"] = 25
+
+    # 2. Time Data
+    time_counts = (
+        travels.groupby("LowOrPeakDescFull", as_index=False, observed=False)
+        .agg(sum_rides=("total_rides", "sum"))
+    )
+
+    # Time Parsing
+    def parse_time_range(desc):
+        matches = re.findall(r'(\d{2}):(\d{2})', str(desc))
+        if len(matches) >= 2:
+            start_h, start_m = int(matches[0][0]), int(matches[0][1])
+            end_h, end_m = int(matches[1][0]), int(matches[1][1])
+            start_decimal = start_h + (start_m / 60.0)
+            end_decimal = end_h + (end_m / 60.0)
+            if end_decimal < start_decimal: end_decimal += 24
+            duration = end_decimal - start_decimal
+            if duration <= 0: duration = 1
+            return start_decimal, duration
+        return 0, 1
+
+    def get_time_range_only(desc):
+        match = re.search(r'(\d{2}:\d{2}\s*-\s*\d{2}:\d{2})', str(desc))
+        if match: return match.group(1).strip()
+        return str(desc)
+
+    time_data = time_counts["LowOrPeakDescFull"].astype(str).apply(parse_time_range)
+    time_counts["start_time"] = [x[0] for x in time_data]
+    time_counts["duration"] = [x[1] for x in time_data]
+
+    # Calc normalized hourly avg
+    time_counts["avg_val"] = (time_counts["sum_rides"] / ESTIMATED_NON_SAT_DAYS) / time_counts["duration"]
+
+    time_counts["range_only_name"] = time_counts["LowOrPeakDescFull"].apply(get_time_range_only)
+    time_counts["theta_val"] = (time_counts["start_time"] + time_counts["duration"] / 2) * 15
+    time_counts["width_val"] = time_counts["duration"] * 15
+
+    # Formatting
+    def format_millions(x):
+        if x >= 1_000_000:
+            return f'{x / 1_000_000:.1f}M'
+        elif x >= 1_000:
+            return f'{x / 1_000:.0f}K'
+        return "" if x == 0 else str(int(x))
+
+    def format_comma(x):
+        return f"{int(x):,}"
+
+    month_counts["text_display"] = month_counts["avg_val"].apply(format_millions)
+    month_counts["tooltip_val"] = month_counts["avg_val"].apply(format_comma)
+
+    time_counts["text_display"] = time_counts["avg_val"].apply(format_millions)
+    time_counts["tooltip_val"] = time_counts["avg_val"].apply(format_comma)
+
+    # --- Plotting Functions ---
+
+
+    CUSTOM_BLUE_SCALE = ['#BDD7EE', '#6BAED6', '#3182BD', '#08519C']
+
+    def create_improved_bar(df, x_col, y_col, title, x_label, y_label, hover_col=None):
+        fig = px.bar(
+            df,
+            x=x_col,
+            y=y_col,
+            text=df["text_display"],
+            color=y_col,
+            color_continuous_scale=CUSTOM_BLUE_SCALE,
+            custom_data=[df[hover_col] if hover_col else df[x_col], df["tooltip_val"]]
+        )
+
+        fig.update_layout(
+            title=dict(text=title, x=1),
+            xaxis_title=x_label,
+            yaxis=dict(
+                title=y_label,
+                title_standoff=30,
+                title_font=dict(size=14)
+            ),
+            coloraxis_showscale=False,
+            font=dict(family="Rubik, sans-serif"),
+            margin=dict(l=80, r=20, t=50, b=50)
+        )
+        fig.update_xaxes(tickangle=0)
+        fig.update_traces(
+            textposition='outside',
+            hovertemplate="<b>%{customdata[0]}</b><br>כמות: %{customdata[1]}<extra></extra>"
+        )
+        return fig
+
+    def create_real_time_clock(df, r_col, title):
+        fig = go.Figure()
+        max_val = df[r_col].max() if not df.empty else 1
+
+        fig.add_trace(go.Barpolar(
+            r=df[r_col],
+            theta=df["theta_val"],
+            width=df["width_val"],
+            text=df["text_display"],
+            customdata=np.stack((df['LowOrPeakDescFull'], df['tooltip_val']), axis=-1),
+            hovertemplate="<b>%{customdata[0]}</b><br>ממוצע לשעה: %{customdata[1]}<extra></extra>",
+            marker=dict(
+                color=df[r_col],
+                colorscale=[[0, '#BDD7EE'], [1, '#08519C']],
+                cmin=df[r_col].min() * 0.3,
+                cmax=max_val,
+                line=dict(color='white', width=1)
+            ),
+        ))
+
+        tick_vals = [h * 15 for h in range(0, 24, 3)]
+        tick_text = [f"{h:02d}:00" for h in range(0, 24, 3)]
+
+        fig.update_layout(
+            title=dict(text=title, x=1),
+            polar=dict(
+                radialaxis=dict(visible=False),
+                angularaxis=dict(
+                    direction="clockwise", rotation=90,
+                    tickmode="array", tickvals=tick_vals, ticktext=tick_text,
+                    tickfont=dict(size=12), showline=True,
+                    linewidth=1, linecolor='rgba(0,0,0,0.1)', gridcolor='rgba(0,0,0,0.1)'
+                ),
+                hole=0.35
+            ),
+            annotations=[dict(
+                text="שעון<br>24 שעות", x=0.5, y=0.5,
+                font=dict(size=14, color='#555'), showarrow=False, xref="paper", yref="paper"
+            )],
+            font=dict(family="Rubik, sans-serif"),
+            margin=dict(t=60, b=40, l=40, r=40)
+        )
+        return fig
+
+    # --- Render GUI (Selected Alternatives Only) ---
+
+    tab_months, tab_times = st.tabs(["📅 לפי חודשים", "⏰ לפי שעות"])
+
+    with tab_months:
+        st.subheader("ממוצע תיקופים חודשי ב-5 השנים האחרונות")
+        # הצגת החלופה הנבחרת: גרף עמודות
+        fig_m_bar = create_improved_bar(
+            month_counts[month_counts.avg_val > 0],
+            "month_name",
+            "avg_val",
+            "ממוצע תיקופים לחודש (השוואה כמותית)",
+            "חודש",
+            "כמות ממוצעת"
+        )
+        st.plotly_chart(fig_m_bar, use_container_width=True)
+
+    with tab_times:
+        st.subheader("ממוצע תיקופים לשעה בפלחי זמן שונים ביום")
+
+        st.markdown("""
+        <div style='background-color: #f0f2f6; padding: 10px; border-radius: 5px; margin-bottom: 20px;'>
+        <strong>מדריך לשימוש בגרף:</strong><br>
+        הגרף מציג את המחזוריות היומית של התחבורה הציבורית במודל "שעון".<br>
+        הגוון הכחול ואורך הגזרה מתחזקים ככל שהעומס הממוצע לשעה עולה.<br>
+        הניחו את העכבר על פלח זמן כדי לראות את המספר המדויק.
+        </div>
+        """, unsafe_allow_html=True)
+
+        # הצגת החלופה הנבחרת: גרף שעון
+        fig_t_clock = create_real_time_clock(time_counts, "avg_val", "שעון עומס שעתי (ממוצע)")
+        st.plotly_chart(fig_t_clock, use_container_width=True)
 # Page 3
 elif page == '📈 מגמות':
     st.title("עמוד 4")
