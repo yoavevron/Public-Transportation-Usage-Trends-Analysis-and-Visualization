@@ -328,18 +328,21 @@ elif page == "🗺️ מפה":
     #region Color and scale
     rides = map_df["total_rides"].values
     log_rides = np.log1p(rides)
-    norm = (log_rides - log_rides.min()) / (log_rides.max() - log_rides.min() + 1e-9)
 
-    color_thresh = 0.7
+    # this normalization calculation is meant to make the top stations very red in comapre to the other
+    norm = (log_rides - log_rides.min()) / (log_rides.max() - log_rides.min() + 1e-9)
+    gamma = 3   
+    saturation = norm ** gamma
+
 
     map_df["color"] = [
         [
-            int(255 * (n / color_thresh)) if n <= color_thresh else 255,  # red
-            255 if n <= color_thresh else int(255 * (1 - (n - color_thresh) / (1 - color_thresh))),  # green
-            0,  # blue
-            180  # alpha
+            255,
+            int(255 * (1 - s)), 
+            int(255 * (1 - s)),             
+            180                             
         ]
-        for n in norm
+        for s in saturation
     ]
 
     map_df["rides_fmt"] = map_df["total_rides"].apply(lambda x: f"{int(x):,}")
@@ -370,6 +373,7 @@ elif page == "🗺️ מפה":
     #endregion
 
     #region ColumnLayer map
+    # scatter map
     layer = pdk.Layer(
         "ScatterplotLayer",
         data=map_df,
@@ -379,6 +383,17 @@ elif page == "🗺️ מפה":
         pickable=True,
         auto_highlight=True,
     )
+
+    # heatmap
+    # layer = pdk.Layer(
+    #     "HeatmapLayer",
+    #     data=map_df,
+    #     get_position=["Long", "Lat"],
+    #     get_weight="total_rides",   
+    #     radiusPixels=38,            
+    #     intensity=1,
+    #     threshold=0.02,
+    # )
 
     view_state = pdk.ViewState(
         latitude=float(map_df.Lat.mean()),
