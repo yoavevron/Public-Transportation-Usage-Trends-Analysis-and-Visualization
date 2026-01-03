@@ -616,10 +616,284 @@ elif page == '📆 תקופות ושעות עמוסות':
 # Page 3
 elif page == '📈 מגמות':
     st.title("עמוד 4")
-    st.info("כאן ייכנס גרף נוסף (טרנדים, התפלגות, השוואות וכו׳).")
+    st.markdown("""
+        גרף זה מציג את השינויים בכמות הנסיעות לאורך ציר הזמן.
+        באמצעות הוויזואליזציה ניתן לזהות דפוסים תקופתיים, השפעות של אירועים חיצוניים (כמו חגים או מצבים ביטחוניים)
+        ואת קצב הגידול בשימוש בתחבורה הציבורית בישראל.
+    """)
 
+    st.sidebar.header("סינון למגמות")
+
+    years_trend = st.sidebar.slider("טווח שנים", year_min, year_max, (year_min, year_max), key="y_trend")
+
+    st.sidebar.subheader("בחר ערים לניתוח המגמה")
+
+    # init state
+    if "trend_cities" not in st.session_state:
+        st.session_state["trend_cities"] = city_values[:]  # ברירת מחדל: כל הערים
+
+    c1, c2 = st.sidebar.columns(2)
+    if c1.button("בחר את כל הערים", use_container_width=True, key="trend_all"):
+        st.session_state["trend_cities"] = city_values[:]
+
+    if c2.button("נקה הכל", use_container_width=True, key="trend_none"):
+        st.session_state["trend_cities"] = []
+
+    selected_cities_trend = st.sidebar.multiselect(
+        " ",
+        options=city_values,
+        key="trend_cities"
+    )
+
+    if not selected_cities_trend:
+        st.warning("אנא בחר לפחות עיר אחת כדי לצפות במגמות.")
+    else:
+
+        df_filtered = travels[
+            (travels.year_key.between(*years_trend)) &
+            (travels.CityName.isin(selected_cities_trend))
+        ]
+
+
+        df_filtered['Full_Date'] = pd.to_datetime(
+            df_filtered['year_key'].astype(str) + '-' +
+            df_filtered['month_key'].astype(str) + '-01'
+        )
+
+        #
+        df_trend = df_filtered.groupby('Full_Date', as_index=False)['total_rides'].sum()
+
+        if df_trend.empty:
+            st.error("לא נמצאו נתונים התואמים את הסינון שנבחר.")
+        else:
+
+            max_val = df_trend['total_rides'].max()
+            max_date = df_trend.loc[df_trend['total_rides'].idxmax(), 'Full_Date']
+
+
+            fig = px.line(
+                df_trend,
+                x='Full_Date',
+                y='total_rides',
+                title='סה"כ נסיעות חודשיות לאורך זמן',
+                labels={'Full_Date': 'תאריך', 'total_rides': 'כמות נסיעות'},
+                markers=True
+            )
+
+
+
+
+            fig.update_traces(
+                line_color='#1f77b4',
+                line_width=3,
+                marker=dict(size=6, opacity=0.7),
+                hovertemplate="<b>תאריך:</b> %{x|%B %Y}<br><b>נסיעות:</b> %{y:,.0f}<extra></extra>"
+            )
+
+
+            fig.add_annotation(
+                x=max_date,
+                y=max_val,
+                text=f"נקודת שיא: {max_val:,.0f}",
+                showarrow=True,
+                arrowhead=2,
+                arrowcolor="red",
+                ax=0,
+                ay=-40,
+                font=dict(color="red", size=12, family="Arial")
+            )
+
+            fig.update_layout(
+                plot_bgcolor='white',
+                xaxis=dict(
+                    showgrid=False,
+                    title="ציר זמן",
+                    rangeslider_visible=False  #
+                ),
+                yaxis=dict(
+                    gridcolor='lightgray',
+                    title="סה\"כ נסיעות",
+                    tickformat=",.0f",
+                    rangemode="tozero"
+                ),
+                title_x=0.5,
+                hovermode="x unified"
+            )
+            fig.update_layout(
+                yaxis=dict(
+                    title='סה"כ נסיעות',
+                    title_standoff=70,
+                    automargin=True,
+                    gridcolor='lightgray',
+                    tickformat=",.0f",
+                    rangemode="tozero"
+                )
+            )
+
+            st.plotly_chart(fig, use_container_width=True)
+
+            # הצגת נתון מספרי בולט מתחת לגרף
+            st.metric("סה\"כ נסיעות בתקופה הנבחרת", f"{df_trend['total_rides'].sum():,.0f}")
 # Page 4
 elif page == '📍 דירוג ערים':
-    st.title("עמוד 5")
-    st.info("כאן ייכנס גרף נוסף (טרנדים, התפלגות, השוואות וכו׳).")
+    st.title("דירוג ערים ושימוש לפי זמן")
+    st.sidebar.header("סינון (דירוג ערים)")
 
+    years_rank = st.sidebar.slider(
+        "שנים (דירוג)", year_min, year_max, (year_min, year_max), key="years_rank"
+    )
+    months_rank = st.sidebar.slider(
+        "חודשים (דירוג)", month_min, month_max, (month_min, month_max), key="months_rank"
+    )
+
+    st.sidebar.divider()
+
+    # ---------- Days multiselect ----------
+    st.sidebar.subheader("יום בשבוע (דירוג)")
+    day_labels_rank = [day_names_map[d] for d in day_values]
+    inv_day_rank = {day_names_map[d]: d for d in day_values}
+
+    if "day_labels_rank_internal" not in st.session_state:
+        st.session_state["day_labels_rank_internal"] = day_labels_rank[:]
+
+    d1, d2 = st.sidebar.columns(2)
+    if d1.button("בחר כל הימים", use_container_width=True, key="rank_days_all"):
+        st.session_state["day_labels_rank_internal"] = day_labels_rank[:]
+    if d2.button("נקה ימים", use_container_width=True, key="rank_days_none"):
+        st.session_state["day_labels_rank_internal"] = []
+
+    selected_day_labels_rank = st.sidebar.multiselect(
+        " ", options=day_labels_rank, key="day_labels_rank_internal"
+    )
+    selected_days_rank = [inv_day_rank[lbl] for lbl in selected_day_labels_rank]
+
+    st.sidebar.divider()
+
+    # ---------- Cities multiselect ----------
+    st.sidebar.subheader("ערים (דירוג)")
+
+    if "rank_cities" not in st.session_state:
+        st.session_state["rank_cities"] = city_values[:]  # default: all
+
+    c1, c2 = st.sidebar.columns(2)
+    if c1.button("בחר כל הערים", use_container_width=True, key="rank_cities_all"):
+        st.session_state["rank_cities"] = city_values[:]
+    if c2.button("נקה ערים", use_container_width=True, key="rank_cities_none"):
+        st.session_state["rank_cities"] = []
+
+    selected_cities_rank = st.sidebar.multiselect(
+        " ", options=city_values, key="rank_cities"
+    )
+
+    # ---------- Validate selections ----------
+    if not selected_days_rank:
+        st.warning("בחר/י לפחות יום אחד בשבוע כדי להציג דירוג.")
+        st.stop()
+
+    if not selected_cities_rank:
+        st.warning("בחר/י לפחות עיר אחת כדי להציג דירוג.")
+        st.stop()
+
+    # ---------- Filter data ----------
+    df = travels[
+        (travels.year_key.between(*years_rank))
+        & (travels.month_key.between(*months_rank))
+        & (travels.day_in_week.isin(selected_days_rank))
+        & (travels.CityName.isin(selected_cities_rank))
+    ].copy()
+
+    if df.empty:
+        st.warning("אין נתונים להצגה עבור הפילטרים שנבחרו.")
+        st.stop()
+
+    # ---------- Group for chart ----------
+    df_grouped = (
+        df.groupby(["CityName", "LowOrPeakDescFull"], as_index=False)["total_rides"]
+          .sum()
+          .rename(columns={
+              "LowOrPeakDescFull": "TimeRange",
+              "CityName": "City"
+          })
+    )
+
+    # ---------- Define TimeRange order + display labels (NO data change) ----------
+    time_order = [
+        "06:00 - 08:59 - שיא בוקר",
+        "09:00 - 11:59 - שפל יום 1",
+        "12:00 - 14:59 - שפל יום 2",
+        "15:00 - 18:59 - שיא ערב",
+        "19:00 - 23:59 - שפל ערב",
+    ]
+
+    time_labels = {
+        "06:00 - 08:59 - שיא בוקר": "06:00 - 08:59",
+        "09:00 - 11:59 - שפל יום 1": "09:00 - 11:59",
+        "12:00 - 14:59 - שפל יום 2": "12:00 - 14:59",
+        "15:00 - 18:59 - שיא ערב": "15:00 - 18:59",
+        "19:00 - 23:59 - שפל ערב": "19:00 - 23:59",
+    }
+
+    # Fallback: keep any extra categories (if exist) after the known ones
+    extra_times = [t for t in df_grouped["TimeRange"].unique().tolist() if t not in time_order]
+    category_order = time_order + sorted(extra_times)
+
+    # ---------- Plotly animated bar ----------
+    fig = px.bar(
+        df_grouped,
+        x="total_rides",
+        y="City",
+        animation_frame="TimeRange",
+        orientation="h",
+        title="שימוש בתחבורה ציבורית לפי עיר וזמן ביום",
+        labels={
+            "total_rides": "סה״כ נסיעות",
+            "City": "",
+            "TimeRange": "טווח שעות",
+        },
+        category_orders={"TimeRange": category_order},
+        text="total_rides",
+        range_x=[0, df_grouped["total_rides"].max() * 1.2],
+    )
+
+    fig.update_traces(texttemplate="%{text:.2s}", textposition="outside")
+    fig.update_layout(
+        title_x=0.5,
+        template="plotly_white",
+        showlegend=False,
+        transition={"duration": 800},
+        margin=dict(l=200),
+    )
+    fig.update_yaxes(title_text="", automargin=True)
+
+    # ---------- Replace the animation frame name in the title (display-only) ----------
+    # px uses the frame name (f.name) in the per-frame title; we swap it to numeric-only.
+    def _swap_frame_title(frame):
+        # frame.name is the original TimeRange string
+        nice = time_labels.get(frame.name, frame.name)
+
+        # ensure layout.title exists
+        if frame.layout.title and frame.layout.title.text:
+            frame.layout.title.text = frame.layout.title.text.replace(frame.name, nice)
+        else:
+            frame.layout.title = {"text": nice}
+
+
+    for frame in fig.frames:
+        nice = time_labels.get(frame.name, frame.name)
+
+        if frame.layout.title and frame.layout.title.text:
+            frame.layout.title.text = frame.layout.title.text.replace(frame.name, nice)
+        else:
+            frame.layout.title = {"text": nice}
+
+    # ---  slider  ---
+    if fig.layout.sliders and len(fig.layout.sliders) > 0:
+        slider = fig.layout.sliders[0]
+
+        slider.currentvalue.prefix = "טווח שעות: "
+
+        for step in slider.steps:
+            full = step.label
+            step.label = time_labels.get(full, full)
+
+    st.plotly_chart(fig, use_container_width=True)
