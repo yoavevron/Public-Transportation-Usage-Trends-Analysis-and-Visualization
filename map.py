@@ -752,7 +752,7 @@ elif page == '📍 דירוג ערים':
         transition={"duration": 600, "easing": "cubic-in-out"},
         xaxis=dict(
             title=dict(
-                text="עיר",
+                text="",
                 font=dict(size=16, family="Arial", color="black"),
                 standoff=10
             ),
@@ -760,8 +760,8 @@ elif page == '📍 דירוג ערים':
         ),
         yaxis=dict(
             title=dict(
-                text="סה״כ נסיעות",
-                font=dict(size=16, family="Arial", color="black"),
+                text="",
+                font=dict(size=12, family="Arial", color="black"),
                 standoff=10
             ),
             tickfont=dict(size=12, family="Arial"),
@@ -776,14 +776,14 @@ elif page == '📍 דירוג ערים':
         frame.layout.yaxis = {
             "range": [0, max_rides * 1.1],
             "title": {
-                "text": "סה״כ נסיעות",
+                "text": "",
                 "font": {"size": 16, "family": "Arial", "color": "black"},
                 "standoff": 15
             }
         }
         frame.layout.xaxis = {
             "title": {
-                "text": "עיר",
+                "text": "",
                 "font": {"size": 16, "family": "Arial", "color": "black"},
                 "standoff": 25
             },
@@ -796,10 +796,10 @@ elif page == '📍 דירוג ערים':
         for step in slider.steps:
             full = step.label
             step.label = time_labels.get(full, full)
+    fig.update_layout(
+        xaxis_title="",
+        yaxis_title=""
+    )
 
     st.plotly_chart(fig, width='stretch')
 
-    fig.update_layout(
-        xaxis_title=None,
-        yaxis_title=None
-    )
