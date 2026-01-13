@@ -1,4 +1,6 @@
-print("start")
+import os
+os.environ["STREAMLIT_RUNTIME_LOG_LEVEL"] = "debug"
+
 import streamlit as st
 import pandas as pd
 import pydeck as pdk
@@ -10,6 +12,12 @@ import time
 from markdowns import *
 from configuration import *
 import zipfile
+
+import sys
+
+def debug(*args):
+    print(*args, file=sys.stderr, flush=True)
+debug("start")
 
 data_path = "data.parquet"
 
