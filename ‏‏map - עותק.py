@@ -92,21 +92,6 @@ def load_prepare_enriched(path: str):
         sorted(travels.CityName.dropna().unique()),
     )
 
-@st.cache_data
-def filter_travels(travels, years, months, selected_hours, selected_days, selected_cities):
-    print("filter_travels")
-    df = travels[
-        travels.year_key.between(*years)
-        & travels.month_key.between(*months)
-        & travels.LowOrPeakDescFull.isin(selected_hours)
-        & travels.day_in_week.isin(selected_days)
-    ]
-
-    if selected_cities:
-        df = df[df.CityName.isin(selected_cities)]
-
-    return aggregate_map(df)
-
 (travels,
  year_min, year_max,
  month_min, month_max,
@@ -115,6 +100,7 @@ def filter_travels(travels, years, months, selected_hours, selected_days, select
 
 #load the city gouped data
 city_grouped = load_city_grouped_data("city_grouped_data.parquet")
+print(city_grouped.head())
 #endregion
 #endregion
 
@@ -136,9 +122,7 @@ if page == '🏠 מסך הבית':
 # Map Page
 elif page == "🗺️ מפה":
     #Infomation and guidance paragraph
-    print("1")
     st.markdown(MAP_MARKDOWN)
-    print("0")
 
     #region Map Filters GUI
     st.sidebar.header("סינון")
@@ -205,21 +189,28 @@ elif page == "🗺️ מפה":
     radius_scale = st.sidebar.slider(
         "רדיוס תחנה",
         min_value=0.2,
-        max_value=8.0,
+        max_value=2.0,
         value=1.0,
         step=0.1
     )    
     #endregion
 
     #region Handle change in GUI elements
-    map_df = filter_travels(
-        travels,
-        years,
-        months,
-        selected_hours,
-        selected_days,
-        selected_cities
-    )
+    filtered_travels = travels[
+        (travels.year_key.between(*years))
+        & (travels.month_key.between(*months))
+        & (travels.LowOrPeakDescFull.isin(selected_hours))
+        & (travels.day_in_week.isin(selected_days))
+    ]
+
+    map_df = aggregate_map(filtered_travels)
+
+
+    if selected_cities:
+        map_df = map_df[map_df.CityName.isin(selected_cities)]
+    else:
+        map_df = map_df.iloc[0:0]
+
 
     if map_df.empty:
         st.warning("אין נתונים להצגה עבור הפילטרים שנבחרו.")
@@ -255,13 +246,17 @@ elif page == "🗺️ מפה":
     top_n = min(int(top_n_input), amount_stations)
     st.session_state["top_n"] = int(top_n_slider)
 
-    display_df = map_df.nlargest(top_n, "total_rides").sort_values("total_rides", ascending=True).copy()
-    display_df["radius"] = 80 * radius_scale
+    map_df = (
+        map_df
+        .nlargest(top_n, "total_rides")
+        .sort_values("total_rides", ascending=True)
+        .copy()
+    )
 
     #endregion
 
     #region Color and scale
-    rides = display_df["total_rides"].values
+    rides = map_df["total_rides"].values
     log_rides = np.log1p(rides)
 
     # this normalization calculation is meant to make the top stations very red in comapre to the other
@@ -270,7 +265,7 @@ elif page == "🗺️ מפה":
     saturation = norm ** gamma
 
 
-    display_df["color"] = [
+    map_df["color"] = [
         [
             int(255 * (1 - s)),
             int(255 * (1 - s)), 
@@ -280,14 +275,20 @@ elif page == "🗺️ מפה":
         for s in saturation
     ]
 
-    display_df["rides_fmt"] = display_df["total_rides"].apply(lambda x: f"{int(x):,}")
+    map_df["rides_fmt"] = map_df["total_rides"].apply(lambda x: f"{int(x):,}")
+
+    # min_r = 30
+    # max_r = 180
+    # base_radius = min_r + norm * (max_r - min_r)
+
+    map_df["radius"] = 80 * radius_scale
 
     #endregion
 
     #region Statistics above the map
     stations_stat, cities_stat, years_stat, months_stat, days_stat = st.columns(5)
 
-    stations_stat.metric("תחנות מוצגות", f"{len(display_df):,}")
+    stations_stat.metric("תחנות מוצגות", f"{len(map_df):,}")
     cities_stat.metric("ערים נבחרו", f"{len(selected_cities):,}")
     if years[0] != years[1]:
         years_stat.metric("שנים", f"{years[1]}–{years[0]}")
@@ -304,7 +305,7 @@ elif page == "🗺️ מפה":
     # scatter map
     layer = pdk.Layer(
         "ScatterplotLayer",
-        data=display_df,
+        data=map_df,
         get_position=["Long", "Lat"],
         get_radius="radius",
         get_fill_color="color",
@@ -771,7 +772,7 @@ elif page == '📍 דירוג ערים':
     for frame in fig.frames:
         frame.layout.margin = dict(l=90, r=30, t=80, b=140)
         nice_label = time_labels.get(frame.name, frame.name)
-        frame.layout.title = {"text": f"אלו {top_n} הערים המובילות בשעות - {nice_label}", "x": 0.5}
+        frame.layout.title = {"text": f"Top {top_n} ערים - {nice_label}", "x": 0.5}
         frame.layout.yaxis = {
             "range": [0, max_rides * 1.1],
             "title": {
