@@ -8,8 +8,15 @@ import re
 import time
 from markdowns import *
 from configuration import *
+import zipfile
 
 data_path = "data.parquet"
+
+@st.cache_data
+def load_data_from_zip(zip_path: str, inner_file: str):
+    with zipfile.ZipFile(zip_path, "r") as z:
+        with z.open(inner_file) as f:
+            return pd.read_parquet(f)
 
 
 # region Configuration
@@ -32,11 +39,13 @@ def aggregate_map(df):
 
 @st.cache_data(show_spinner=True)
 def load_city_grouped_data(path: str):
-    return pd.read_parquet(path)
+    # return pd.read_parquet(path)
+    return load_data_from_zip("data.zip", "data.parquet")
+
 
 @st.cache_data(show_spinner=True)
 def load_prepare_enriched(path: str):
-    df = pd.read_parquet(path)
+    df = load_data_from_zip("data.zip", "data.parquet")
 
     df = df[
         [
