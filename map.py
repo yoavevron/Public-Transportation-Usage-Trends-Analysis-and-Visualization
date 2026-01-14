@@ -24,6 +24,7 @@ data_path = "data.parquet"
 @st.cache_data
 def load_data_from_zip(zip_path: str, inner_file: str):
     with zipfile.ZipFile(zip_path, "r") as z:
+        debug("ZIP CONTENTS:", z.namelist())
         with z.open(inner_file) as f:
             return pd.read_parquet(f)
 
