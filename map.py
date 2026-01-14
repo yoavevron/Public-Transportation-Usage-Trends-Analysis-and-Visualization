@@ -49,12 +49,12 @@ def aggregate_map(df):
 @st.cache_data(show_spinner=True)
 def load_city_grouped_data(path: str):
     # return pd.read_parquet(path)
-    return load_data_from_zip("data.zip", "data.parquet")
+    return load_data_from_zip("data.zip", "data\data.parquet")
 
 
 @st.cache_data(show_spinner=True)
 def load_prepare_enriched(path: str):
-    df = load_data_from_zip("data.zip", "data.parquet")
+    df = load_data_from_zip("data.zip", "data\data.parquet")
 
     df = df[
         [
@@ -124,7 +124,7 @@ def filter_travels(travels, years, months, selected_hours, selected_days, select
         df = df[df.CityName.isin(selected_cities)]
 
     return aggregate_map(df)
-travels, year_min, year_max, month_min, month_max, time_values, day_values, city_values = load_prepare_enriched(data_path)
+(travels, year_min, year_max, month_min, month_max, time_values, day_values, city_values) = load_prepare_enriched(data_path)
 
 #load the city gouped data
 city_grouped = load_city_grouped_data("city_grouped_data.parquet")
