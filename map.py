@@ -124,17 +124,19 @@ def filter_travels(travels, years, months, selected_hours, selected_days, select
         df = df[df.CityName.isin(selected_cities)]
 
     return aggregate_map(df)
-
+debug("2")
 (travels,
  year_min, year_max,
  month_min, month_max,
  time_values, day_values,
  city_values) = load_prepare_enriched(data_path)
+debug("3")
 
 #load the city gouped data
 city_grouped = load_city_grouped_data("city_grouped_data.parquet")
 #endregion
 #endregion
+debug("4")
 
 # Page selector
 page = st.sidebar.radio("תפריט", [
@@ -145,6 +147,7 @@ page = st.sidebar.radio("תפריט", [
     "📍 דירוג ערים"
 ])
 st.sidebar.divider()
+debug("5")
 
 # Home page
 if page == '🏠 מסך הבית':
