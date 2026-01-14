@@ -21,12 +21,20 @@ debug("start")
 
 data_path = "data.parquet"
 
-@st.cache_data
+# @st.cache_data
+# def load_data_from_zip(zip_path: str, inner_file: str):
+#     with zipfile.ZipFile(zip_path, "r") as z:
+#         debug("ZIP CONTENTS:", z.namelist())
+#         with z.open(inner_file) as f:
+#             return pd.read_parquet(f)
+import io
+
 def load_data_from_zip(zip_path: str, inner_file: str):
     with zipfile.ZipFile(zip_path, "r") as z:
         debug("ZIP CONTENTS:", z.namelist())
-        with z.open(inner_file) as f:
-            return pd.read_parquet(f)
+        data = z.read(inner_file)   
+        buffer = io.BytesIO(data)   
+        return pd.read_parquet(buffer)
 
 
 # region Configuration
