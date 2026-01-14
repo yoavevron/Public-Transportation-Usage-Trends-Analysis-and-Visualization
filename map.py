@@ -50,13 +50,13 @@ def aggregate_map(df):
 @st.cache_data(show_spinner=True)
 def load_city_grouped_data(path: str):
     # return pd.read_parquet(path)
-    return load_data_from_zip("data.zip", "data/data.parquet")
+    return load_data_from_zip("data.zip", "data.parquet")
 
 
 @st.cache_data(show_spinner=True)
 def load_prepare_enriched(path: str):
-    df = load_data_from_zip("data.zip", "data/data.parquet")
-
+    df = load_data_from_zip("data.zip", "data.parquet")
+    debug(df.head())
     df = df[
         [
             "StationId",
