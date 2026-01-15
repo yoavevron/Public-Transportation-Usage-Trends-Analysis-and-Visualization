@@ -123,7 +123,7 @@ def filter_travels(travels, years, months, selected_hours, selected_days, select
 debug("f")
 
 #load the city gouped data
-city_grouped = load_city_grouped_data("city_grouped_data.parquet")
+city_grouped = pd.read_parquet("city_grouped_data.parquet")
 #endregion
 #endregion
 debug("g")
