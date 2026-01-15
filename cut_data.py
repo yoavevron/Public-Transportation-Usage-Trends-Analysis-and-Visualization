@@ -14,4 +14,4 @@ selected_cities = city_grouped.iloc[4:9]["CityName"]
 
 df_small = df[df["CityName"].isin(selected_cities)].copy()
 
-df_small.to_parquet("data_small.parquet", index=False)
+df_small.to_parquet("data_small.parquet", engine="pyarrow", index=False)

@@ -17,6 +17,9 @@ import sys
 def debug(*args):
     print(*args, file=sys.stderr, flush=True)
 debug("start")
+debug("CWD:", os.getcwd())
+debug("FILES:", os.listdir())
+debug("EXISTS city_grouped:", os.path.exists("city_grouped_data.parquet"))
 
 data_path = "data_small.parquet"
 
