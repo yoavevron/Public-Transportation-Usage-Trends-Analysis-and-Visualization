@@ -61,12 +61,13 @@ def load_prepare_enriched(path: str):
             "total_rides",
         ]
     ].copy()
-
+    debug("a")
     stations = (
         df[["StationId", "StationName", "CityName", "Lat", "Long"]]
         .drop_duplicates(subset=["StationId"])
         .reset_index(drop=True)
     )
+    debug("b")
 
     travels = (
         df.groupby(
@@ -75,6 +76,7 @@ def load_prepare_enriched(path: str):
         )
         .agg(total_rides=("total_rides", "sum"))
     )
+    debug("c")
 
     # data types
     travels["LowOrPeakDescFull"] = travels["LowOrPeakDescFull"].astype("category")
@@ -82,6 +84,7 @@ def load_prepare_enriched(path: str):
     travels["StationId"] = travels["StationId"].astype("int32")
     travels["year_key"] = travels["year_key"].astype("int16")
     travels["month_key"] = travels["month_key"].astype("int8")
+    debug("d")
 
     # merge + drop na
     travels = travels.merge(
@@ -89,6 +92,7 @@ def load_prepare_enriched(path: str):
         on="StationId",
         how="left",
     ).dropna(subset=["Lat", "Long"])
+    debug("e")
 
     return (
         travels,
@@ -116,11 +120,13 @@ def filter_travels(travels, years, months, selected_hours, selected_days, select
 
     return aggregate_map(df)
 (travels, year_min, year_max, month_min, month_max, time_values, day_values, city_values) = load_prepare_enriched(data_path)
+debug("f")
 
 #load the city gouped data
 city_grouped = load_city_grouped_data("city_grouped_data.parquet")
 #endregion
 #endregion
+debug("g")
 
 # Page selector
 page = st.sidebar.radio("תפריט", [
@@ -131,6 +137,7 @@ page = st.sidebar.radio("תפריט", [
     "📍 דירוג ערים"
 ])
 st.sidebar.divider()
+debug("h")
 
 # Home page
 if page == '🏠 מסך הבית':
