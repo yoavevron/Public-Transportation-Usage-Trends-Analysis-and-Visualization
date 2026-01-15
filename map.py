@@ -11,38 +11,20 @@ import re
 import time
 from markdowns import *
 from configuration import *
-import zipfile
-
 import sys
+
 
 def debug(*args):
     print(*args, file=sys.stderr, flush=True)
 debug("start")
 
-data_path = "data.parquet"
-
-# @st.cache_data
-# def load_data_from_zip(zip_path: str, inner_file: str):
-#     with zipfile.ZipFile(zip_path, "r") as z:
-#         debug("ZIP CONTENTS:", z.namelist())
-#         with z.open(inner_file) as f:
-#             return pd.read_parquet(f)
-import io
-
-def load_data_from_zip(zip_path: str, inner_file: str):
-    with zipfile.ZipFile(zip_path, "r") as z:
-        debug("ZIP CONTENTS:", z.namelist())
-        data = z.read(inner_file)   
-        buffer = io.BytesIO(data)   
-        return pd.read_parquet(buffer)
-
+data_path = "data_small.parquet"
 
 # region Configuration
 st.set_page_config(layout="wide")
 
 # Align everything on the hteml final page to right because we think its more elegant in hebrew as the data is relevant to Israel only
 st.markdown(STYLE_MARKDOWN, unsafe_allow_html=True)
-
 
 #region Initalize
 @st.cache_data
@@ -58,12 +40,12 @@ def aggregate_map(df):
 @st.cache_data(show_spinner=True)
 def load_city_grouped_data(path: str):
     # return pd.read_parquet(path)
-    return load_data_from_zip("data.zip", "data.parquet")
+    return pd.read_parquet(data_path)
 
 
 @st.cache_data(show_spinner=True)
 def load_prepare_enriched(path: str):
-    df = load_data_from_zip("data.zip", "data.parquet")
+    df = pd.read_parquet(data_path)
     debug(df.head())
     df = df[
         [
@@ -139,7 +121,6 @@ def filter_travels(travels, years, months, selected_hours, selected_days, select
 city_grouped = load_city_grouped_data("city_grouped_data.parquet")
 #endregion
 #endregion
-debug("4")
 
 # Page selector
 page = st.sidebar.radio("תפריט", [
@@ -150,7 +131,6 @@ page = st.sidebar.radio("תפריט", [
     "📍 דירוג ערים"
 ])
 st.sidebar.divider()
-debug("5")
 
 # Home page
 if page == '🏠 מסך הבית':
