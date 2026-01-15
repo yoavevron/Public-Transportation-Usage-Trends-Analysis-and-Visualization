@@ -1,5 +1,4 @@
-import pandas as pd
+import pyarrow.parquet as pq
 
-df = pd.read_parquet("city_grouped_data.parquet")
-
-print(df)
+table = pq.read_table("city_grouped_data_old.parquet")
+pq.write_table(table, "city_grouped_data.parquet")
