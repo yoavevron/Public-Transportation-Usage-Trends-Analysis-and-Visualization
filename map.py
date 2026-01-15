@@ -11,38 +11,23 @@ import re
 import time
 from markdowns import *
 from configuration import *
-import zipfile
-
 import sys
+
 
 def debug(*args):
     print(*args, file=sys.stderr, flush=True)
-debug("start")
+# debug("start")
+# debug("CWD:", os.getcwd())
+# debug("FILES:", os.listdir())
+# debug("EXISTS city_grouped:", os.path.exists("city_grouped_data.parquet"))
 
-data_path = "data.parquet"
-
-# @st.cache_data
-# def load_data_from_zip(zip_path: str, inner_file: str):
-#     with zipfile.ZipFile(zip_path, "r") as z:
-#         debug("ZIP CONTENTS:", z.namelist())
-#         with z.open(inner_file) as f:
-#             return pd.read_parquet(f)
-import io
-
-def load_data_from_zip(zip_path: str, inner_file: str):
-    with zipfile.ZipFile(zip_path, "r") as z:
-        debug("ZIP CONTENTS:", z.namelist())
-        data = z.read(inner_file)
-        buffer = io.BytesIO(data)
-        return pd.read_parquet(buffer)
-
+data_path = "data_small.parquet"
 
 # region Configuration
 st.set_page_config(layout="wide")
 
 # Align everything on the hteml final page to right because we think its more elegant in hebrew as the data is relevant to Israel only
 st.markdown(STYLE_MARKDOWN, unsafe_allow_html=True)
-
 
 #region Initalize
 @st.cache_data
@@ -58,12 +43,12 @@ def aggregate_map(df):
 @st.cache_data(show_spinner=True)
 def load_city_grouped_data(path: str):
     # return pd.read_parquet(path)
-    return load_data_from_zip("data_full.zip", "data_full.parquet")
+    return pd.read_parquet(data_path)
 
 
 @st.cache_data(show_spinner=True)
 def load_prepare_enriched(path: str):
-    df = load_data_from_zip("data_full.zip", "data_full.parquet")
+    df = pd.read_parquet(data_path)
     debug(df.head())
     df = df[
         [
@@ -79,12 +64,13 @@ def load_prepare_enriched(path: str):
             "total_rides",
         ]
     ].copy()
-
+    debug("a")
     stations = (
         df[["StationId", "StationName", "CityName", "Lat", "Long"]]
         .drop_duplicates(subset=["StationId"])
         .reset_index(drop=True)
     )
+    debug("b")
 
     travels = (
         df.groupby(
@@ -93,6 +79,7 @@ def load_prepare_enriched(path: str):
         )
         .agg(total_rides=("total_rides", "sum"))
     )
+    debug("c")
 
     # data types
     travels["LowOrPeakDescFull"] = travels["LowOrPeakDescFull"].astype("category")
@@ -100,6 +87,7 @@ def load_prepare_enriched(path: str):
     travels["StationId"] = travels["StationId"].astype("int32")
     travels["year_key"] = travels["year_key"].astype("int16")
     travels["month_key"] = travels["month_key"].astype("int8")
+    debug("d")
 
     # merge + drop na
     travels = travels.merge(
@@ -107,6 +95,7 @@ def load_prepare_enriched(path: str):
         on="StationId",
         how="left",
     ).dropna(subset=["Lat", "Long"])
+    debug("e")
 
     return (
         travels,
@@ -134,13 +123,13 @@ def filter_travels(travels, years, months, selected_hours, selected_days, select
 
     return aggregate_map(df)
 (travels, year_min, year_max, month_min, month_max, time_values, day_values, city_values) = load_prepare_enriched(data_path)
+debug("f")
 
 #load the city gouped data
-city_grouped = load_city_grouped_data("city_grouped_data.parquet")
+city_grouped = pd.read_parquet("city_grouped_data.parquet")
 #endregion
 #endregion
-debug("4")
-
+debug("g")
 
 # Page selector
 page = st.sidebar.radio("תפריט", [

@@ -10,7 +10,7 @@ city_grouped = (
 )
 
 # Select ranks 5 to 15
-selected_cities = city_grouped.iloc[4:9]["CityName"]
+selected_cities = city_grouped.iloc[4:14]["CityName"]
 
 df_small = df[df["CityName"].isin(selected_cities)].copy()
 
