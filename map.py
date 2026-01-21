@@ -598,6 +598,44 @@ elif page == '📈 מגמות':
         font=dict(color="red", size=12, family="Arial")
     )
 
+    events = [
+        {
+            "date": "2020-04-01",
+            "label": "אפריל 2020 – התפרצות הקורונה"
+        },
+        {
+            "date": "2023-10-01",
+            "label": "אוקטובר 2023 – מלחמת חרבות ברזל"
+        },
+        {
+            "date": "2025-06-01",
+            "label": "יוני 2025 – מבצע עם כלביה"
+        },
+    ]
+
+    y_max = df_trend["total_rides"].max()
+
+    for ev in events:
+        event_date = pd.to_datetime(ev["date"])
+
+        fig.add_vline(
+            x=event_date,
+            line_width=2,
+            line_color="orange",
+            opacity=0.8
+        )
+
+        fig.add_annotation(
+            x=event_date,
+            y=y_max,
+            text=ev["label"],
+            showarrow=False,
+            xanchor="left",
+            yanchor="bottom",
+            font=dict(color="orange", size=12),
+            bgcolor="rgba(255,255,255,0.7)"
+        )
+
     fig.update_layout(
         xaxis=dict(
             showgrid=False,
